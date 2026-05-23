@@ -113,6 +113,8 @@ try:
         # ----------------------------------------
         # 顯示畫面
         cv2.imshow('Smart Table Vision Test', frame)
+        # (電腦真正的視覺)
+        cv2.imshow('Debug Mask', thresh)
 
         # 按 'q' 鍵離開
         if cv2.waitKey(1) & 0xFF == ord('q'):
