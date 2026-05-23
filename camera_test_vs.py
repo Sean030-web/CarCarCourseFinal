@@ -48,7 +48,7 @@ try:
             # --- 【濾網一：面積上下限】 ---
             # 濾除太小的雜點或太大的手臂干擾 (數值可依實際鏡頭高度微調)
             area = cv2.contourArea(contour)
-            if area < 4000 or area > 30000: 
+            if area < 10000 or area > 60000: 
                 continue
                 
             # --- 【濾網二：飽滿度 (Solidity) 檢查】 ---
