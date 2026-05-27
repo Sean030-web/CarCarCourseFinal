@@ -22,6 +22,9 @@ try:
         time.sleep(2)
         kit.continuous_servo[0].throttle = 0
         time.sleep(2)
+        kit.continuous_servo[0].throttle = 0
+        time.sleep(2)
+
 
 except KeyboardInterrupt:
     # 當你按下 Ctrl + C 時，執行煞車動作
