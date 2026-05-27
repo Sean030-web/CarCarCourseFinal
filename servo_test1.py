@@ -19,11 +19,11 @@ try:
     print("this servo will spin 2 sec, rest 2 sec, repeatedly")
     while True:
         kit.continuous_servo[0].throttle = 1.0 
-        time.sleep(2)
+        time.sleep(1)
         kit.continuous_servo[0].throttle = 0
         time.sleep(2)
         kit.continuous_servo[0].throttle = 0
-        time.sleep(2)
+        time.sleep(1)
 
 
 except KeyboardInterrupt:
