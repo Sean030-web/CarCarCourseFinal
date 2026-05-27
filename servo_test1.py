@@ -22,7 +22,7 @@ try:
         time.sleep(1)
         kit.continuous_servo[0].throttle = 0
         time.sleep(2)
-        kit.continuous_servo[0].throttle = 0
+        kit.continuous_servo[0].throttle = -1.0
         time.sleep(1)
 
 
