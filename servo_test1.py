@@ -10,6 +10,7 @@ kit = ServoKit(channels=16)
 # ==========================================
 
 try:
+    servo_current_angle = [0.0]
     print("啟動 360 度馬達...")
     
     # 針對 360 度馬達，我們使用 continuous_servo 和 throttle (油門)
@@ -20,10 +21,12 @@ try:
     while True:
         kit.continuous_servo[0].throttle = 1.0 
         time.sleep(0.3)
+        servo_current_angle[0] += 0.3
         kit.continuous_servo[0].throttle = 0
         time.sleep(2)
         kit.continuous_servo[0].throttle = -1.0
         time.sleep(0.3)
+        servo_current_angle[0] -= 0.3
         kit.continuous_servo[0].throttle = 0
         time.sleep(2)
 
@@ -31,6 +34,11 @@ try:
 except KeyboardInterrupt:
     # 當你按下 Ctrl + C 時，執行煞車動作
     print("\n收到停止指令，緊急煞車！")
-    
+    if servo_current_angle[0] >= 0:
+        kit.continuous_servo[0].throttle = -1.0 
+        time.sleep(servo_current_angle[0])
+    else:
+        kit.continuous_servo[0].throttle = 1.0 
+        time.sleep(-servo_current_angle[0])
     # 將油門設為 0，馬達就會完全停止
     kit.continuous_servo[0].throttle = 0
