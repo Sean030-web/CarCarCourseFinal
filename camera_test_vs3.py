@@ -40,6 +40,16 @@ phone_area_threshold = 10000
 # 🌟 新增：手動控制背景更新的開關 (預設為 True，代表持續學習)
 update_bg = True 
 
+# 請根據你實際架設的鏡頭角度，慢慢微調這四個數字，直到網格完美貼合實體桌面
+GRID_START_X = 80   # 網格左上角的 X 座標
+GRID_START_Y = 32   # 網格左上角的 Y 座標
+GRID_WIDTH = 440    # 網格的總寬度
+GRID_HEIGHT = 440   # 網格的總高度
+
+# 根據總寬高，算出每一格的大小
+CELL_W = GRID_WIDTH // 4
+CELL_H = GRID_HEIGHT // 4
+
 # ==========================================
 # 3. 核心辨識迴圈
 # ==========================================
@@ -146,6 +156,28 @@ try:
                 
                 # 呼叫馬達復位
                 my_servo.go_back()
+
+            
+        
+
+
+
+        for i in range(5):
+            # 垂直線
+            vx = GRID_START_X + i * CELL_W
+            cv2.line(frame, (vx, GRID_START_Y), (vx, GRID_START_Y + GRID_HEIGHT), (0, 255, 255), 2)
+            # 水平線
+            hy = GRID_START_Y + i * CELL_H
+            cv2.line(frame, (GRID_START_X, hy), (GRID_START_X + GRID_WIDTH, hy), (0, 255, 255), 2)
+
+        # 2. 在每一格印上 0~15 的編號 (方便對齊馬達通道)
+        for row in range(4):
+            for col in range(4):
+                motor_id = row * 4 + col  # 算出 0~15 的編號
+                # 計算文字要放的座標 (放在每一格的左上角稍微偏移一點)
+                text_x = GRID_START_X + col * CELL_W + 10
+                text_y = GRID_START_Y + row * CELL_H + 30
+                cv2.putText(frame, str(motor_id), (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
 
         # ==========================================
