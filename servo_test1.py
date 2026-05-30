@@ -33,7 +33,6 @@ try:
 
 except KeyboardInterrupt:
     # 當你按下 Ctrl + C 時，執行煞車動作
-    print("\n收到停止指令，緊急煞車！")
     if servo_current_angle[0] >= 0:
         kit.continuous_servo[0].throttle = -1.0 
         time.sleep(servo_current_angle[0])
@@ -42,3 +41,4 @@ except KeyboardInterrupt:
         time.sleep(-servo_current_angle[0])
     # 將油門設為 0，馬達就會完全停止
     kit.continuous_servo[0].throttle = 0
+    print("\nstop!!!!!!!")
