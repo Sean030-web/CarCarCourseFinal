@@ -26,6 +26,7 @@ picam2.set_controls({
 # ==========================================
 backSub = cv2.createBackgroundSubtractorMOG2(history=50, varThreshold=50, detectShadows=True)
 print("✅ MOG2 動態引擎啟動！")
+print("⌨️  操作提示：請在影像視窗上按下 'r' 鍵來強制 切換/凍結 背景學習！")
 
 prev_cup_center = None
 FALLING_THRESHOLD = 30
@@ -35,9 +36,12 @@ is_phone_present = False
 phone_area_threshold = 10000
 update_bg = True 
 
+# 🌟 新增：用來「鎖定」被手機壓到的格子，只在觸發瞬間計算一次
+locked_active_motors = set()
+
 # 網格設定 (請依實體慢慢微調)
-GRID_START_X = 80   
-GRID_START_Y = 32   
+GRID_START_X = 122   
+GRID_START_Y = 30   
 GRID_WIDTH = 440    
 GRID_HEIGHT = 440   
 CELL_W = GRID_WIDTH // 4
@@ -60,7 +64,7 @@ try:
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         phone_detected_now = False
-        phone_box_this_frame = None # 用來記錄這幀手機的形狀，方便後續算網格
+        phone_box_this_frame = None 
 
         # ==========================================
         # 🟢 階段一：尋找手機模式 (嚴格審查)
@@ -97,23 +101,34 @@ try:
                     if 1.5 < aspect_ratio < 2.5:
                         cv2.putText(frame, "Phone", (int(center_x), int(center_y)-20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
                         phone_detected_now = True 
-                        phone_box_this_frame = box # 存起來給網格計算用
+                        phone_box_this_frame = box # 存起來準備算格子
                         
                     elif aspect_ratio <= 1.3:
                         cv2.putText(frame, "Cup", (int(center_x), int(center_y)-20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                        # (水杯防傾倒邏輯保留)
             
-            # 決策觸發點 1
+            # 🎯 決策觸發點 1：確認找到手機的「那一瞬間」
             if phone_detected_now:
                 print("\n📱 [系統觸發] 嚴格審查通過，確認為手機！")
+                
+                # 🌟 只在這一瞬間，計算手機壓到了哪些格子，並「鎖定」起來
+                if phone_box_this_frame is not None:
+                    px, py, pw, ph = cv2.boundingRect(phone_box_this_frame)
+                    for row in range(4):
+                        for col in range(4):
+                            cx = GRID_START_X + col * CELL_W
+                            cy = GRID_START_Y + row * CELL_H
+                            if not (px > cx + CELL_W or px + pw < cx or py > cy + CELL_H or py + ph < cy):
+                                locked_active_motors.add(row * 4 + col)
+                
+                print(f"🎯 [馬達模擬] 鎖定並準備升起區塊: {list(locked_active_motors)}")
+                
                 is_phone_present = True
                 update_bg = False # 進入看守模式，大腦永久凍結
                 
-                # TODO: 實機測試時，在這裡加入馬達升起程式碼
-                # my_servo.go_up_and_down(**motor_commands) 
+                # TODO: my_servo.go_up_and_down(**motor_commands) 
                 
             else:
-                # 預防性凍結：如果有大東西(例如手)在畫面上，暫停學習；畫面空了才恢復
+                # 預防性凍結：有大東西暫停學習；畫面空了才恢復
                 update_bg = not has_large_object
 
         # ==========================================
@@ -130,47 +145,29 @@ try:
                     largest_box = np.intp(cv2.boxPoints(rect))
             
             if largest_box is not None:
-                phone_box_this_frame = largest_box # 存起來給網格計算用
                 cv2.drawContours(frame, [largest_box], 0, (0, 0, 255), 2) 
                 cv2.putText(frame, f"Guarding... Area: {int(max_area)}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-            # 決策觸發點 2：確認手機拿走
+            # 🎯 決策觸發點 2：確認手機拿走
             if max_area < phone_area_threshold:
                 print("\n👋 [系統觸發] 手機已移開！")
                 is_phone_present = False
-                update_bg = True # 解凍背景，重新適應空桌子
+                update_bg = True # 解凍背景
+                locked_active_motors.clear() # 🌟 清空鎖定的格子
                 
-                # TODO: 實機測試時，在這裡加入馬達降下復位程式碼
-                # my_servo.go_back()
+                # TODO: my_servo.go_back()
 
         # ==========================================
-        # 🎨 網格計算與繪圖層
+        # 🎨 網格繪圖層 (直接讀取鎖定的格子)
         # ==========================================
-        active_motors = set()
-        
-        # 1. 如果畫面上確定有手機，計算它壓到了哪些格子
-        if phone_box_this_frame is not None:
-            # 取得手機的正向外接矩形 (用來做最簡單快速的碰撞測試)
-            px, py, pw, ph = cv2.boundingRect(phone_box_this_frame)
-            
-            for row in range(4):
-                for col in range(4):
-                    cx = GRID_START_X + col * CELL_W
-                    cy = GRID_START_Y + row * CELL_H
-                    
-                    # 判斷手機矩形有沒有跟這個網格重疊 (碰撞檢測)
-                    if not (px > cx + CELL_W or px + pw < cx or py > cy + CELL_H or py + ph < cy):
-                        active_motors.add(row * 4 + col)
-
-        # 2. 畫出 4x4 網格並根據狀態變色
         for row in range(4):
             for col in range(4):
                 motor_id = row * 4 + col
                 cx = GRID_START_X + col * CELL_W
                 cy = GRID_START_Y + row * CELL_H
                 
-                # 如果這格被壓到，畫粗線亮綠色；沒壓到畫細線黃色
-                if motor_id in active_motors:
+                # 如果這格在「鎖定名單」裡，畫粗線亮綠色；否則畫細線黃色
+                if motor_id in locked_active_motors:
                     cv2.rectangle(frame, (cx, cy), (cx + CELL_W, cy + CELL_H), (0, 255, 0), 4)
                     text_color = (0, 255, 0)
                 else:
@@ -178,10 +175,6 @@ try:
                     text_color = (0, 255, 255)
                     
                 cv2.putText(frame, str(motor_id), (cx + 10, cy + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, text_color, 2)
-
-        # 3. 如果是剛剛放下去的那一幀，印出需要升起的馬達編號清單
-        if phone_detected_now and not is_phone_present:
-            print(f"🎯 [馬達模擬] 準備升起以下區塊: {list(active_motors)}")
 
         # ==========================================
         # 顯示狀態與畫面
@@ -193,8 +186,20 @@ try:
         cv2.imshow('Smart Table Vision', frame)
         cv2.imshow('Debug Mask', thresh)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        # ----------------------------------------
+        # ⌨️ 鍵盤事件偵測 (包含 R 鍵)
+        # ----------------------------------------
+        key = cv2.waitKey(1) & 0xFF
+        
+        if key == ord('q'):
             break
+        elif key == ord('r'):
+            # 按下 'r' 鍵強制切換狀態
+            update_bg = not update_bg
+            if update_bg:
+                print("🧠 [手動模式] 強制開啟背景學習！")
+            else:
+                print("🧊 [手動模式] 強制凍結背景！")
 
 except KeyboardInterrupt:
     print("\n程式已手動中斷")

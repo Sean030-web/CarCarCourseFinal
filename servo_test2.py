@@ -9,13 +9,13 @@ class Servo:
         self.kit = ServoKit(channels=16)
         self.servo_current_angle = [0.0] * 16 # 應該是拿來復位用
 
-    def go_up_and_down(self, **kwargs): # 存要上升的馬達以及各個要上升的速度
+    def go_up_and_down(self, kwargs): # 存要上升的馬達以及各個要上升的速度
         for key, value in kwargs.items():
             self.kit.continuous_servo[key].throttle = value
-        time.sleep(0.3)
+        time.sleep(0.6)
         for key, value in kwargs.items():
             self.kit.continuous_servo[key].throttle = 0
-            self.servo_current_angle[key] += value * 0.3
+            self.servo_current_angle[key] += value * 0.6
 
     def go_back(self):
         for i in range(16):
