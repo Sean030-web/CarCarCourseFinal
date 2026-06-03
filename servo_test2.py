@@ -28,11 +28,11 @@ class Servo:
 def main():
     try:
         my_servo = Servo()
-        print("this servo will spin 2 sec, rest 2 sec, repeatedly")
+        print("this servo will spin 2 sec, rest 2 sec, repeatedly!")
         while True:
-            my_servo.go_up_and_down(**{0: 1.0})
+            my_servo.go_up_and_down({0: 1.0})
             time.sleep(2)
-            my_servo.go_up_and_down(**{0: -1.0})
+            my_servo.go_up_and_down({0: -1.0})
             time.sleep(2)
 
 
