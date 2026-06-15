@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import time
 from picamera2 import Picamera2
-# from servo_test2 import Servo
+from servo_test2 import Servo
 import math
 
 # ==========================================
@@ -13,7 +13,7 @@ picam2.configure(picam2.create_preview_configuration(main={"size": (640, 480)}))
 picam2.start()
 
 print("啟動 Dynamic Shape Display 核心視覺引擎...")
-# my_servo = Servo() # TODO: 實機測試時解開
+my_servo = Servo() # TODO: 實機測試時解開
 
 time.sleep(3)
 
@@ -30,8 +30,7 @@ backSub = cv2.createBackgroundSubtractorMOG2(history=50, varThreshold=50, detect
 print("✅ 引擎啟動完成！")
 print("⌨️  操作提示：按下 'r' 鍵可手動 切換/凍結 背景學習，按下 'q' 離開。")
 
-FALLING_THRESHOLD = 30
-prev_cup_center = None
+
 
 # 手機狀態變數
 is_phone_present = False
@@ -40,6 +39,19 @@ update_bg = True
 isFirst_object = True
 phone_steady_start_time = 0.0
 phone_confirm_delay = 1.0
+
+#杯子狀態變數
+is_cup_present = False
+cup_area_threshold = 20000
+cup_steady_start_time = 0.0
+cup_confrim_delay = 1.0
+
+
+is_cup_guarding = False      # 杯子發生傾倒 (觸發狀態)
+FALLING_THRESHOLD = 70
+prev_cup_center = None
+cup_occupied = set()         # 預先算好的馬達清單
+locked_cup_mask = None
 
 # 🌟 進階記憶變數：高低差與手部追蹤
 high_occupied = set()
@@ -76,11 +88,13 @@ try:
         phone_detected_now = False
         phone_box_this_frame = None
         phone_candidate_this_frame = None
+        cup_candidate_this_frame = None
+        cup_box_this_frame = None
 
         # ==========================================
         # 🟢 階段一：尋找目標與手部追蹤
         # ==========================================
-        if not is_phone_present:
+        if not is_phone_present and not is_cup_present:
             update_bg = True
             for contour in contours:
                 area = cv2.contourArea(contour)
@@ -128,12 +142,10 @@ try:
                 # 確認是否為水杯 (保留原本功能)
                 if aspect_ratio <= 1.3:
                     cv2.putText(frame, "Cup", (int(center_x), int(center_y)-20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                    if prev_cup_center is not None:
-                        dx = center_x - prev_cup_center[0]
-                        dy = center_y - prev_cup_center[1]
-                        if np.sqrt(dx**2 + dy**2) > FALLING_THRESHOLD:
-                            cv2.putText(frame, "SPILL WARNING!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
-                    prev_cup_center = (center_x, center_y)
+                    cup_candidate_this_frame = box
+                    cup_center_this_frame = (center_x, center_y)
+                else:
+                    cup_candidate_this_frame = None
 
             # ==========================================
             # 🎯 決策層：方向判斷與 3D 高低差分配
@@ -154,6 +166,18 @@ try:
                 else:
                     # 如果這一個 Frame 突然沒看到手機 (可能是手揮過去造成的雜訊)，計時器立刻歸零重算
                     phone_steady_start_time = 0.0
+
+            if not is_cup_present:
+                if cup_candidate_this_frame is not None:
+                    if cup_steady_start_time == 0.0:
+                        cup_steady_start_time = time.time()
+                    elif time.time() - cup_steady_start_time > cup_confrim_delay:
+                        cup_box_this_frame = cup_candidate_this_frame
+                        print("現在要檢測杯子有沒有傾倒")
+                        cup_steady_start_time = 0.0
+                        is_cup_present = True
+                else:
+                    cup_steady_start_time = 0.0
 
 
             if phone_detected_now and not is_phone_present:
@@ -227,6 +251,10 @@ try:
 
                 print(f"🔺 升起 (粉紅靠背): {list(high_occupied)}")
                 print(f"🔻 微升 (淺藍擋板): {list(low_occupied)}")
+                commands = {}
+                for m in high_occupied: commands[m] = 1.0
+                for m in low_occupied: commands[m] = 0.5
+                my_servo.go_up_and_down(commands)
 
                 # TODO: 傳送指令給馬達
                 # commands = {}
@@ -234,10 +262,46 @@ try:
                 # for m in low_occupied: commands[m] = 0.5    # 半速/短時間上升
                 # my_servo.go_up_and_down(**commands)
 
+            if is_cup_present:
+                # 1. 建立水杯的「實體面積」純白遮罩
+                cup_mask = np.zeros((480, 640), dtype=np.uint8)
+                cv2.fillPoly(cup_mask, [cup_candidate_this_frame], 255)
+                inv_cup_mask = cv2.bitwise_not(cup_mask) # 反向遮罩 (水杯以外的地方)
+
+                # 2. 畫出超厚的邊界線 (因為會向內外兩邊長，厚度設大一點，例如 90)
+                guard_thickness = 180
+                cup_line_mask = np.zeros((480, 640), dtype=np.uint8)
+                cv2.polylines(cup_line_mask, [cup_candidate_this_frame], True, 255, guard_thickness)
+
+                # 3. 🎯 魔法交集：只取「超厚邊界線」的【外側】 (利用 inv_cup_mask 扣除水杯實體面積)
+                locked_cup_mask = cv2.bitwise_and(cup_line_mask, inv_cup_mask)
+
+                # 4. 檢查 16 個格子並分發指令
+                cup_occupied.clear()
+                cell_area = CELL_W * CELL_H
+                for row in range(4):
+                    for col in range(4):
+                        cx, cy = GRID_START_X + col * CELL_W, GRID_START_Y + row * CELL_H
+
+                        cell_cup_guard = locked_cup_mask[cy:cy+CELL_H, cx:cx+CELL_W]
+                        cell_cup_body = cup_mask[cy:cy+CELL_H, cx:cx+CELL_W] # 杯子實體
+
+                        # 🌟 絕對互斥條件：
+                        # 條件 A：深藍色防波堤區域覆蓋率大於 15%
+                        # 條件 B：水杯「實體」壓在這格的面積必須小於 5% (確保絕對不會頂到杯子本人)
+                        if (cv2.countNonZero(cell_cup_guard) / cell_area) > 0.15 and \
+                           (cv2.countNonZero(cell_cup_body) / cell_area) < 0.05:
+                            cup_occupied.add(row * 4 + col)
+
+                print(f"✅ 計算完成！隨時準備啟動外圍馬達防波堤: {list(cup_occupied)}")
+                prev_cup_center = cup_center_this_frame # 🌟 補上這行：記下最初的中心點
+
+
+
         # ==========================================
         # 🔴 階段二：看守模式
         # ==========================================
-        else:
+        elif is_phone_present:
             max_area = 0
             largest_box = None
             for contour in contours:
@@ -262,10 +326,52 @@ try:
                 locked_high_mask = None
                 locked_low_mask = None
                 recent_hand_center = None
-                isFirst_object = True
+                # isFirst_object = True
 
+                my_servo.go_back()
+
+        elif is_cup_present:
+            max_area = 0
+            largest_box = None
+            current_center = None
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area > max_area:
+                    max_area = area
+                    rect = cv2.minAreaRect(contour)
+                    largest_box = np.intp(cv2.boxPoints(rect))
+                    current_center = (rect[0][0], rect[0][1])
+
+            if largest_box is not None:
+                cv2.drawContours(frame, [largest_box], 0, (0, 0, 255), 2)
+                status_msg = "Guarding Cup..."
+                cv2.putText(frame, f"{status_msg} Area: {int(max_area)}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+            # 🚨 水杯專屬：瞬間傾倒偵測
+            if is_cup_present and not is_cup_guarding and current_center is not None:
+                dx = current_center[0] - prev_cup_center[0]
+                dy = current_center[1] - prev_cup_center[1]
+
+                if np.sqrt(dx**2 + dy**2) > FALLING_THRESHOLD:
+                    print("\n🚨 [危險警告] 偵測到水杯傾倒！瞬間升起預先計算好的防護牆！")
+                    is_cup_guarding = True
+
+                    # 🚀 TODO: 在這裡把 cup_occupied 的指令傳給馬達，達到零延遲防護！
+                    # commands = {}
+                    # for m in cup_occupied: commands[m] = 1.0
+                    # my_servo.go_up_and_down(**commands)
+
+                prev_cup_center = current_center
+
+            if max_area < cup_area_threshold:
+                print("\n👋 桌面已清空！全體復位。")
+                is_cup_present = False
+                is_cup_guarding = False
+                update_bg = True
+                cup_occupied.clear()
+                prev_cup_center = None
+                locked_cup_mask = None
                 # my_servo.go_back()
-
         # ==========================================
         # 🎨 UI 繪製：高低實體遮罩與動態網格
         # ==========================================
@@ -273,6 +379,12 @@ try:
             frame[locked_high_mask > 0] = [255, 0, 255, 255] # 粉紅色 (靠背)
         if locked_low_mask is not None:
             frame[locked_low_mask > 0] = [255, 255, 0, 255]  # 淺藍色 (前端擋板)
+
+        if locked_cup_mask is not None:
+            if is_cup_guarding:
+                frame[locked_cup_mask > 0] = [0, 165, 255, 255]   # 🚨 觸發防護：亮橘色 (警告)
+            else:
+                frame[locked_cup_mask > 0] = [255, 100, 0, 255]   # 🛡️ 待命狀態：深藍色框框
 
         for i in range(5):
             vx = GRID_START_X + i * CELL_W
@@ -321,7 +433,7 @@ except KeyboardInterrupt:
     print("\n程式已手動中斷")
 
 finally:
-    # my_servo.go_back()
+    my_servo.go_back()
     picam2.stop()
     cv2.destroyAllWindows()
     print("相機已安全關閉")
