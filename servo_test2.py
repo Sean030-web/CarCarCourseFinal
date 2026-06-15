@@ -25,15 +25,8 @@ class Servo:
         self.servo_accumulated_time = [0.0] * 16
 
     def go_up_and_down(self, motors):
-        """
-        傳入字典，例如 {0: 1.0, 1: -1.0}
-        """
-        # 1. 一律以全速 (1.0 或 -1.0) 輸出，確保最大扭力，排除非線性速度問題
         for key, value in motors.items():
-            # 強制將輸入正規化為全速 1.0 或 -1.0 (保持方向)
-            direction = 1.0 if value > 0 else -1.0
-            calibrated_speed = direction * k[key]
-
+            calibrated_speed = value * k[key]
             self.kit.continuous_servo[key].throttle = calibrated_speed
 
         # 2. 固定作動時間
@@ -43,26 +36,25 @@ class Servo:
         # 3. 煞車並精準記錄通電時間
         for key, value in motors.items():
             self.kit.continuous_servo[key].throttle = 0
-            direction = 1.0 if value > 0 else -1.0
-            # 累積該馬達運作的時間軸
-            self.servo_accumulated_time[key] += direction * run_time
+            self.servo_accumulated_time[key] += value * run_time
 
     def go_back(self):
         print("\n執行高精度安全復位（全速時間對等機制）...")
 
         # 複製一份當前的時間記憶，避免迴圈內動態修改導致混亂
-        remaining_times = [t for t in self.servo_accumulated_time]
+        remaining_times = [3 * t for t in self.servo_accumulated_time]
+        remaining_times[0] *= 1.2
 
         # 1. 讓所有需要歸位的馬達「同時」以全速反向啟動
         active_home = False
         for i in range(16):
             if remaining_times[i] > 0:
                 # 之前是上升的，現在全速下降
-                self.kit.continuous_servo[i].throttle = -1.0 * k[i]
+                self.kit.continuous_servo[i].throttle = -0.3 * k[i]
                 active_home = True
             elif remaining_times[i] < 0:
                 # 之前是下降的，現在全速上升
-                self.kit.continuous_servo[i].throttle = 1.0 * k[i]
+                self.kit.continuous_servo[i].throttle = 0.3 * k[i]
                 active_home = True
 
         if not active_home:
