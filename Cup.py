@@ -35,7 +35,7 @@ class Cup:
                 return True
         else:
             self.steady_start_time = 0.0
-            
+
         return False
 
     def calculate_defense_wall(self, frame_shape, grid_start_x, grid_start_y, cell_w, cell_h):
@@ -45,7 +45,7 @@ class Cup:
         self.cup_body_mask = cup_mask.copy()
         self.original_cup_area = cv2.countNonZero(self.cup_body_mask)
 
-        inv_cup_mask = cv2.bitwise_not(cup_mask) 
+        inv_cup_mask = cv2.bitwise_not(cup_mask)
 
         # 畫出超厚的邊界線
         guard_thickness = 180
@@ -58,18 +58,18 @@ class Cup:
         # 檢查 16 個格子並分發指令
         self.occupied_cells.clear()
         cell_area = cell_w * cell_h
-        
+
         for row in range(4):
             for col in range(4):
                 cx = grid_start_x + col * cell_w
                 cy = grid_start_y + row * cell_h
 
                 cell_cup_guard = self.locked_mask[cy:cy+cell_h, cx:cx+cell_w]
-                cell_cup_body = cup_mask[cy:cy+cell_h, cx:cx+cell_w] 
+                cell_cup_body = cup_mask[cy:cy+cell_h, cx:cx+cell_w]
 
                 # 絕對互斥條件：防護區 > 15%，且實體覆蓋 < 5%
                 if (cv2.countNonZero(cell_cup_guard) / cell_area) > 0.15 and \
-                   (cv2.countNonZero(cell_cup_body) / cell_area) < 0.4:
+                   (cv2.countNonZero(cell_cup_body) / cell_area) < 0.2:
                     self.occupied_cells.add(row * 4 + col)
 
         print(f"✅ 計算完成！隨時準備啟動外圍馬達防波堤: {list(self.occupied_cells)}")
@@ -83,9 +83,9 @@ class Cup:
                 self.is_guarding = True
                 print("Spilled")
                 return True
-                
+
             self.prev_center = current_center
-            
+
         return False
 
     def reset(self):
