@@ -36,8 +36,8 @@ class Phone:
                 print("Phone!!!")
                 return True  # 觸發計算訊號
         else:
-            self.steady_start_time = 0.0  
-            
+            self.steady_start_time = 0.0
+
         return False
 
     def calculate_support(self, frame_shape, grid_start_x, grid_start_y, cell_w, cell_h):
