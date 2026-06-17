@@ -5,17 +5,21 @@ from adafruit_servokit import ServoKit
 
 # 馬達校正係數
 k = [1.0] * 16
-k[0] = 0.7
-k[1] = 0.8
-k[4] = 0.8
-k[5] = 0.7
-k[6] = 0.8
-k[7] = 0.8
-k[8] = 0.95
-k[9] = 0.9
-k[11] = 0.7
-k[12] = 0.8
-k[13] = 0.9
+k[0] = 0.75
+k[1] = 0.75
+k[2] = 0.75
+k[3] = 0.9
+k[4] = 0.65
+k[5] = 0.55
+k[6] = 0.7
+k[7] = 0.7
+k[8] = 0.9
+k[9] = 0.65
+k[11] = 0.9
+k[12] = 0.7
+k[13] = 0.8
+k[14] = 0.7
+k[15] = 0.4
 
 class Servo:
     def __init__(self):
@@ -25,25 +29,35 @@ class Servo:
         self.servo_accumulated_time = [0.0] * 16
 
     def go_up_and_down(self, motors):
+        """
+        傳入字典，例如 {0: 1.0, 1: -1.0}
+        """
+        # 1. 一律以全速 (1.0 或 -1.0) 輸出，確保最大扭力，排除非線性速度問題
         for key, value in motors.items():
             calibrated_speed = value * k[key]
+            if key == 15 and value > 0: calibrated_speed *= 1.2
+
             self.kit.continuous_servo[key].throttle = calibrated_speed
 
         # 2. 固定作動時間
-        run_time = 0.6
+        run_time = 0.7
         time.sleep(run_time)
 
         # 3. 煞車並精準記錄通電時間
         for key, value in motors.items():
             self.kit.continuous_servo[key].throttle = 0
+            # 累積該馬達運作的時間軸
             self.servo_accumulated_time[key] += value * run_time
+            if key == 15: print(self.servo_accumulated_time[key])
 
     def go_back(self):
         print("\n執行高精度安全復位（全速時間對等機制）...")
 
         # 複製一份當前的時間記憶，避免迴圈內動態修改導致混亂
-        remaining_times = [3 * t for t in self.servo_accumulated_time]
+        remaining_times = [(3.5 * t) for t in self.servo_accumulated_time]
         remaining_times[0] *= 1.2
+        remaining_times[4] *= 1.2
+        remaining_times[3] *= 1.2
 
         # 1. 讓所有需要歸位的馬達「同時」以全速反向啟動
         active_home = False
@@ -56,6 +70,8 @@ class Servo:
                 # 之前是下降的，現在全速上升
                 self.kit.continuous_servo[i].throttle = 0.3 * k[i]
                 active_home = True
+            if i == 15: self.kit.continuous_servo[i].throttle *= 3.0
+            if i == 15: print("15 is going down")
 
         if not active_home:
             print("所有馬達皆在原點，無需復位。")
@@ -87,12 +103,19 @@ class Servo:
 def main():
     try:
         my_servo = Servo()
-        print("this servo will spin 2 sec, rest 2 sec, repeatedly!")
+        #print("this servo will spin 2 sec, rest 2 sec, repeatedly!")
         while True:
-            my_servo.go_up_and_down({0: -1.0, 1: -1.0, 8: -1.0, 14: -1.0})
+            commands = {}
+            for i in range(16): commands[i] = 1.0
+            my_servo.go_up_and_down({4: 1.0, 5: 1.0})
             time.sleep(2)
-            my_servo.go_up_and_down({0: 1.0, 1: 1.0, 8: 1.0, 14: 1.0})
-            time.sleep(2)
+            #my_servo.go_back()
+            #my_servo.go_up_and_down({15: -1.0})
+            #time.sleep(2)
+            break
+
+            #my_servo.go_up_and_down({0: 1.0, 1: 1.0, 8: 1.0, 14: 1.0})
+            #time.sleep(2)
 
 
     except KeyboardInterrupt:
