@@ -25,14 +25,12 @@ class Servo:
     def __init__(self):
         print("初始化 PCA9685 驅動板...")
         self.kit = ServoKit(channels=16)
-        # 🌟 改為記錄每顆馬達「全速運作的累積時間」(秒)，正代表上升，負代表下降
         self.servo_accumulated_time = [0.0] * 16
 
     def go_up_and_down(self, motors):
         """
         傳入字典，例如 {0: 1.0, 1: -1.0}
         """
-        # 1. 一律以全速 (1.0 或 -1.0) 輸出，確保最大扭力，排除非線性速度問題
         for key, value in motors.items():
             calibrated_speed = value * k[key]
             if key == 15 and value > 0: calibrated_speed *= 1.2
@@ -63,11 +61,11 @@ class Servo:
         active_home = False
         for i in range(16):
             if remaining_times[i] > 0:
-                # 之前是上升的，現在全速下降
+                # 之前是上升的，現在下降
                 self.kit.continuous_servo[i].throttle = -0.3 * k[i]
                 active_home = True
             elif remaining_times[i] < 0:
-                # 之前是下降的，現在全速上升
+                # 之前是下降的，現在上升
                 self.kit.continuous_servo[i].throttle = 0.3 * k[i]
                 active_home = True
             if i == 15: self.kit.continuous_servo[i].throttle *= 3.0
